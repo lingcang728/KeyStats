@@ -1,0 +1,63 @@
+{
+  "name": "keystats",
+  "version": "1.0.0",
+  "description": "Windows 键鼠统计系统托盘应用 - 统计键盘敲击、鼠标点击、移动距离和滚动距离",
+  "main": "./out/main/index.js",
+  "author": "KeyStats",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "pack": "electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@electron/remote": "^2.1.2",
+    "echarts": "^5.5.0",
+    "electron-store": "^8.2.0",
+    "uiohook-napi": "^1.5.4",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "electron": "^29.1.4",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.1.0",
+    "png-to-ico": "^3.0.1",
+    "sass": "^1.72.0",
+    "sharp": "^0.34.5",
+    "typescript": "^5.4.3",
+    "vite": "^5.2.6",
+    "vue-tsc": "^2.0.7"
+  },
+  "build": {
+    "appId": "com.keystats.app",
+    "productName": "KeyStats",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "resources/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "KeyStats.exe"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": "resources/"
+      }
+    ]
+  }
+}

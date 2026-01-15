@@ -1,0 +1,104 @@
+// ========================================
+// KeyStats Design System - iOS Control Center Dark Glassmorphism
+// ========================================
+
+// 深色背景系统 - 高度物理磨砂 (Heavy Physical Frosted Glass)
+// 增加不透明度以阻挡背景形状，仅透色
+$bg-primary: rgba(20, 22, 28, 0.85);      // 主背景：高不透明度
+$bg-secondary: rgba(30, 32, 40, 0.80);    // 次级背景
+$bg-card: rgba(40, 42, 50, 0.75);         // 卡片背景
+$bg-hover: rgba(60, 62, 70, 0.85);
+
+// 字体
+$font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+$font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+
+$font-size-xs: 11px;
+$font-size-sm: 13px;
+$font-size-md: 15px; // iOS base size
+$font-size-lg: 17px;
+$font-size-xl: 22px;
+$font-size-2xl: 28px;
+
+// 文字颜色 (WCAG AA Contrast)
+$text-primary: #FFFFFF;           // 纯白
+$text-secondary: rgba(235, 235, 245, 0.60); // iOS Secondary Label
+$text-muted: rgba(235, 235, 245, 0.30);     // iOS Tertiary Label
+
+// 间距
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 14px;
+$spacing-lg: 18px;
+$spacing-xl: 24px;
+$spacing-2xl: 32px;
+
+// 边框和阴影
+$border-glass: rgba(255, 255, 255, 0.08); // 细微边界
+$border-light: rgba(255, 255, 255, 0.05);
+$border-radius-xs: 4px;
+$border-radius-sm: 10px;  // iOS 风格圆角略大
+$border-radius-md: 14px;
+$border-radius-lg: 18px;
+$border-radius-xl: 24px;
+
+$shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.1);
+$shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
+$shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
+$shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.4);
+
+// 动画
+$transition-fast: 0.15s cubic-bezier(0.25, 0.1, 0.25, 1);
+$transition-normal: 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+$transition-slow: 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+
+// 主题色 - 保持高饱和度以在深色背景上突出
+$accent-blue: #0A84FF;    // iOS Blue
+$accent-cyan: #64D2FF;    // iOS Cyan
+$accent-green: #30D158;   // iOS Green
+$accent-mint: #63E6E2;    
+$accent-red: #FF453A;     // iOS Red
+$accent-purple: #BF5AF2;  // iOS Purple
+$accent-gradient: linear-gradient(135deg, #0A84FF, #5E5CE6);
+$btn-secondary-bg: rgba(255, 255, 255, 0.1);
+$btn-danger-bg: rgba(255, 69, 58, 0.2); // 半透明红
+
+// 混合宏 (Mixins)
+// ========================================
+
+// iOS Control Center 风格的高斯模糊 - 增强版
+@mixin glass-effect {
+  background-color: $bg-primary;
+  // 极高斯模糊，彻底虚化背景
+  backdrop-filter: blur(60px) saturate(180%);
+  -webkit-backdrop-filter: blur(60px) saturate(180%);
+  // 添加细微噪点纹理模拟磨砂质感 (通过边框和阴影辅助)
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: $shadow-lg;
+}
+
+// 子组件玻璃效果
+@mixin card-glass {
+  background-color: $bg-card;
+  // 叠加模糊
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: $border-radius-md;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+@mixin hover-lift {
+  transition: background-color 0.2s, transform 0.2s;
+  &:hover {
+    background-color: $bg-hover;
+    transform: scale(1.02);
+  }
+}
+
+@mixin text-gradient($gradient) {
+  background: $gradient;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
