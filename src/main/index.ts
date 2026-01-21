@@ -1,13 +1,160 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, dialog } from 'electron'
 import { join, resolve } from 'path'
+import { autoUpdater } from 'electron-updater'
 import { InputMonitor } from './inputMonitor'
 import { StatsManager } from './statsManager'
 import { ICON_BASE64 } from './iconData'
+
+// 自动更新逻辑
+function setupAutoUpdater(): void {
+  // 设置自动下载为 true，这样发现更新会自动下载
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('checking-for-update', () => {
+    // console.log('Checking for update...')
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    // 可以在这里通知渲染进程有更新可用
+    // dialog.showMessageBox({
+    //   type: 'info',
+    //   title: '发现新版本',
+    //   message: `发现新版本 v${info.version}，正在后台下载...`
+    // })
+  })
+
+  autoUpdater.on('update-not-available', (info) => {
+    // console.log('Update not available.')
+  })
+
+  autoUpdater.on('error', (err) => {
+    // dialog.showErrorBox('更新错误', err.message)
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    // 下载完成后，询问用户是否重启更新
+    dialog.showMessageBox({
+      type: 'info',
+      title: '更新准备就绪',
+      message: `新版本 v${info.version} 已下载完成，将在退出应用后自动安装。`,
+      buttons: ['立即重启更新', '稍后'],
+      defaultId: 0
+    }).then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall()
+      }
+    })
+  })
+}
+
 
 // 防止应用多开
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
+}
+
+// ============================================
+// 开机自启管理 (兼容 Windows 10/11)
+// ============================================
+const AUTO_LAUNCH_NAME = 'KeyStats'
+
+/**
+ * 获取应用可执行文件路径
+ * 处理便携版和安装版的不同情况
+ */
+function getAppExePath(): string {
+  // 便携版: PORTABLE_EXECUTABLE_FILE 环境变量指向实际的 exe
+  // 安装版: 直接使用 process.execPath
+  return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath
+}
+
+/**
+ * 获取开机自启状态
+ */
+function getAutoLaunchEnabled(): boolean {
+  try {
+    const exePath = getAppExePath()
+    
+    if (!app.isPackaged) {
+      // 开发模式
+      const settings = app.getLoginItemSettings({
+        path: process.execPath,
+        args: [app.getAppPath()]
+      })
+      console.log('[AutoLaunch] Dev mode, status:', settings.openAtLogin)
+      return settings.openAtLogin
+    }
+    
+    // 生产模式 - 需要使用相同的 name 参数才能正确读取状态
+    const options: Record<string, unknown> = {
+      path: exePath,
+      name: AUTO_LAUNCH_NAME
+    }
+    const settings = app.getLoginItemSettings(options as Electron.LoginItemSettingsOptions)
+    
+    console.log('[AutoLaunch] Get status:', {
+      openAtLogin: settings.openAtLogin,
+      path: exePath,
+      name: AUTO_LAUNCH_NAME,
+      executableWillLaunchAtLogin: settings.executableWillLaunchAtLogin
+    })
+    
+    return settings.openAtLogin
+  } catch (error) {
+    console.error('[AutoLaunch] Failed to get status:', error)
+    return false
+  }
+}
+
+/**
+ * 设置开机自启
+ */
+function setAutoLaunchEnabled(enabled: boolean): boolean {
+  try {
+    const exePath = getAppExePath()
+    
+    if (!app.isPackaged) {
+      // 开发模式
+      app.setLoginItemSettings({
+        openAtLogin: enabled,
+        path: process.execPath,
+        args: [app.getAppPath()]
+      })
+      console.log('[AutoLaunch] Dev mode, set to:', enabled)
+      return enabled
+    }
+    
+    // 生产模式 - 完整配置确保 Win10/11 兼容
+    // 使用类型断言绕过 TypeScript 限制，因为 Electron 运行时支持 name 参数
+    const settings: Record<string, unknown> = {
+      openAtLogin: enabled,
+      // name 参数对 Windows 注册表项名称很重要，确保 Win10 兼容
+      name: AUTO_LAUNCH_NAME,
+      // path 必须是完整路径
+      path: exePath
+    }
+    
+    app.setLoginItemSettings(settings as Electron.Settings)
+    
+    console.log('[AutoLaunch] Set to:', {
+      enabled,
+      path: exePath,
+      name: AUTO_LAUNCH_NAME
+    })
+    
+    // 验证设置是否成功
+    const verify = getAutoLaunchEnabled()
+    if (verify !== enabled) {
+      console.warn('[AutoLaunch] Verification failed! Expected:', enabled, 'Got:', verify)
+    }
+    
+    return enabled
+  } catch (error) {
+    console.error('[AutoLaunch] Failed to set:', error)
+    return false
+  }
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -68,24 +215,11 @@ function createTray(): void {
     { label: '重置统计', click: () => resetStats() },
     { type: 'separator' },
     {
-      label: '开机启动', type: 'checkbox', checked: (() => {
-        if (!app.isPackaged) {
-          return app.getLoginItemSettings({
-            path: process.execPath,
-            args: [`"${app.getAppPath()}"`]
-          }).openAtLogin
-        }
-        return app.getLoginItemSettings().openAtLogin
-      })(), click: (item) => {
-        if (!app.isPackaged) {
-          app.setLoginItemSettings({
-            openAtLogin: item.checked,
-            path: process.execPath,
-            args: [`"${app.getAppPath()}"`]
-          })
-        } else {
-          app.setLoginItemSettings({ openAtLogin: item.checked })
-        }
+      label: '开机启动',
+      type: 'checkbox',
+      checked: getAutoLaunchEnabled(),
+      click: (item) => {
+        setAutoLaunchEnabled(item.checked)
       }
     },
     { type: 'separator' },
@@ -154,15 +288,6 @@ function updateTrayIcon(): void {
   tray.setToolTip(`KeyStats\n键盘: ${stats.keyStrokes.toLocaleString()}\n点击: ${(stats.leftClicks + stats.rightClicks).toLocaleString()}`)
 }
 
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M'
-  } else if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K'
-  }
-  return num.toString()
-}
-
 function sendStatsToRenderer(): void {
   if (mainWindow && statsManager) {
     const todayStats = statsManager.getTodayStats()
@@ -197,27 +322,26 @@ function setupIPC(): void {
     return true
   })
 
-  ipcMain.handle('get-autostart', () => {
-    if (!app.isPackaged) {
-      return app.getLoginItemSettings({
-        path: process.execPath,
-        args: [`"${app.getAppPath()}"`]
-      }).openAtLogin
+  ipcMain.handle('quit-app', () => {
+    console.log('[Main] quit-app received, stopping monitor and quitting...')
+    // 先停止输入监听器，否则 uiohook 会阻止进程退出
+    if (inputMonitor) {
+      inputMonitor.stop()
     }
-    return app.getLoginItemSettings().openAtLogin
+    // 销毁托盘
+    if (tray) {
+      tray.destroy()
+    }
+    // 退出应用
+    app.quit()
+  })
+
+  ipcMain.handle('get-autostart', () => {
+    return getAutoLaunchEnabled()
   })
 
   ipcMain.handle('set-autostart', (_, enabled: boolean) => {
-    if (!app.isPackaged) {
-      app.setLoginItemSettings({
-        openAtLogin: enabled,
-        path: process.execPath,
-        args: [`"${app.getAppPath()}"`]
-      })
-    } else {
-      app.setLoginItemSettings({ openAtLogin: enabled })
-    }
-    return enabled
+    return setAutoLaunchEnabled(enabled)
   })
 }
 
@@ -277,6 +401,17 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
   startInputMonitor()
+  setupAutoUpdater()
+
+  // 生产环境下检查更新
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdatesAndNotify()
+
+    // 每 4 小时检查一次更新
+    setInterval(() => {
+      autoUpdater.checkForUpdatesAndNotify()
+    }, 4 * 60 * 60 * 1000)
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

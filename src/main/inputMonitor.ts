@@ -8,6 +8,7 @@ export class InputMonitor extends EventEmitter {
 
   private activeModifiers: Set<number> = new Set()
   private modifierUsed: Set<number> = new Set() // 标记修饰键是否参与了组合
+  private pressedKeys: Set<number> = new Set() // 跟踪当前按下的普通键，防止长按重复计数
 
   constructor() {
     super()
@@ -55,6 +56,12 @@ export class InputMonitor extends EventEmitter {
         return // 修饰键按下时不立即触发，等待后续判断
       }
 
+      // 防止长按重复计数：如果该键已经被按下且未释放，忽略此事件
+      if (this.pressedKeys.has(keycode)) {
+        return // 忽略重复的 keydown 事件（长按导致的）
+      }
+      this.pressedKeys.add(keycode) // 标记该键为已按下
+
       // 如果有修饰键按下，则构成组合键
       if (this.activeModifiers.size > 0) {
         // 标记所有当前按下的修饰键为"已使用"
@@ -82,7 +89,8 @@ export class InputMonitor extends EventEmitter {
         this.activeModifiers.delete(keycode)
         this.modifierUsed.delete(keycode)
       } else {
-        // 普通按键释放，不需要特殊处理
+        // 普通按键释放，从 pressedKeys 中移除，允许下次按下时再次计数
+        this.pressedKeys.delete(keycode)
       }
     })
 

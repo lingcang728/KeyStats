@@ -242,6 +242,7 @@ const hideWindow = () => {
 }
 
 const quitApp = () => {
+  console.log('[Renderer] quitApp called')
   window.api.quitApp()
 }
 

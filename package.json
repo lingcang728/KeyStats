@@ -1,6 +1,6 @@
 {
   "name": "keystats",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Windows 键鼠统计系统托盘应用 - 统计键盘敲击、鼠标点击、移动距离和滚动距离",
   "main": "./out/main/index.js",
   "author": "KeyStats",
@@ -17,6 +17,7 @@
     "@electron/remote": "^2.1.2",
     "echarts": "^5.5.0",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.7.3",
     "uiohook-napi": "^1.5.4",
     "vue": "^3.4.21"
   },
@@ -41,14 +42,28 @@
     },
     "win": {
       "target": [
+        "nsis",
         "portable"
       ],
       "icon": "resources/icon.ico",
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "KeyStats.exe"
+      "artifactName": "${productName}-Portable-${version}.${ext}"
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "KeyStats",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "lingcang728",
+        "repo": "KeyStats"
+      }
+    ],
     "files": [
       "out/**/*",
       "resources/**/*"

@@ -220,12 +220,17 @@ watch([timeRange, metric, () => props.data], () => {
   updateChart()
 }, { deep: true })
 
+const handleResize = () => {
+  chartInstance?.resize()
+}
+
 onMounted(() => {
   initChart()
-  window.addEventListener('resize', () => chartInstance?.resize())
+  window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
   chartInstance?.dispose()
 })
 </script>

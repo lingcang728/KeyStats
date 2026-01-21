@@ -11,6 +11,12 @@ const api = {
   // 隐藏窗口
   hideWindow: () => ipcRenderer.invoke('hide-window'),
   
+  // 退出应用
+  quitApp: () => {
+    console.log('[Preload] quitApp called')
+    return ipcRenderer.invoke('quit-app')
+  },
+  
   // 获取开机启动状态
   getAutostart: () => ipcRenderer.invoke('get-autostart'),
   
