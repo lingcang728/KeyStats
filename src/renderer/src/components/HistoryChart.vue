@@ -68,6 +68,8 @@ const props = defineProps<Props>()
 
 const chartRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
+// 记录上一次渲染的类目数量，用于检测时间范围切换
+let lastCategoryCount = 0
 
 const timeRange = ref<'7d' | '30d'>('7d')
 const metric = ref<'keyStrokes' | 'clicks' | 'mouseDistance' | 'scrollDistance'>('keyStrokes')
@@ -184,13 +186,15 @@ const updateChart = () => {
       universalTransition: true,
       // 初始动画时长
       animationDuration: 1000,
-      // 更新动画时长（数据变化时）
-      animationDurationUpdate: 300,
+      // 更新动画时长（数据变化时）—— 600ms 配合 cubicOut 让柱子位移更舒展、不仓促
+      animationDurationUpdate: 600,
+      animationEasingUpdate: 'cubicOut',
       itemStyle: {
         color: '#0A84FF',
         borderRadius: chartType.value === 'bar' ? [4, 4, 0, 0] : 0,
-        borderColor: '#fff',
-        borderWidth: 1.5
+        // 折线图的圆点保留白色描边，柱状图不画描边（既无视觉收益又拖慢动画）
+        borderColor: chartType.value === 'line' ? '#fff' : 'transparent',
+        borderWidth: chartType.value === 'line' ? 1.5 : 0
       },
       lineStyle: {
         width: 3,
@@ -206,8 +210,26 @@ const updateChart = () => {
     }]
   }
   
-  // 移除 replaceMerge，依赖 id 进行智能合并
-  chartInstance.setOption(option, { notMerge: false })
+  // 折线图在 7天↔30天 切换时，按索引合并会导致折线"从右侧滑入"的错位动画，
+  // 因此当 x 轴类目数量变化且当前是折线图时，先 clear 再重设，让它走一次
+  // 干净的入场动画（折线从左到右绘制）。
+  // 柱状图各根柱子是独立的，合并动画本身就很自然（旧柱左移 + 新柱从右长出来），
+  // 用户喜欢这个效果，所以柱状图保持平滑合并行为；但用 replaceMerge 让 xAxis/yAxis
+  // 整体替换、不参与插值动画，避免日期标签和 y 轴数值"飘动"。
+  const categoryCountChanged = dates.length !== lastCategoryCount
+  lastCategoryCount = dates.length
+
+  if (categoryCountChanged && chartType.value === 'line') {
+    chartInstance.clear()
+    chartInstance.setOption(option, { notMerge: true })
+  } else if (categoryCountChanged && chartType.value === 'bar') {
+    chartInstance.setOption(option, {
+      notMerge: false,
+      replaceMerge: ['xAxis', 'yAxis']
+    })
+  } else {
+    chartInstance.setOption(option, { notMerge: false })
+  }
 }
 
 // 监听图表类型变化，手动触发一次更新以应用 universalTransition
