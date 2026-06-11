@@ -49,7 +49,7 @@
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "${productName}-Portable-${version}.${ext}"
+      "artifactName": "${productName}-Portable.${ext}"
     },
     "nsis": {
       "oneClick": false,
