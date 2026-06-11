@@ -75,7 +75,7 @@ const timeRange = ref<'7d' | '30d'>('7d')
 const metric = ref<'keyStrokes' | 'clicks' | 'mouseDistance' | 'scrollDistance'>('keyStrokes')
 const chartType = ref<'line' | 'bar'>('line')
 
-const metrics = [
+const metrics: { key: 'keyStrokes' | 'clicks' | 'mouseDistance' | 'scrollDistance'; label: string }[] = [
   { key: 'keyStrokes', label: '键盘' },
   { key: 'clicks', label: '点击' },
   { key: 'mouseDistance', label: '移动' },
@@ -134,7 +134,6 @@ const updateChart = () => {
       trigger: 'axis',
       confine: true, // 限制在图表区域内，防止溢出导致消失
       enterable: true, // 允许鼠标进入 Tooltip
-      snap: true, // 自动吸附到最近的数据点
       showContent: true,
       backgroundColor: 'rgba(20, 20, 20, 0.85)', // 更深的黑色背景
       borderColor: 'rgba(255, 255, 255, 0.1)',

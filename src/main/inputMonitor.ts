@@ -2,9 +2,11 @@ import { EventEmitter } from 'events'
 import { uIOhook, UiohookKey } from 'uiohook-napi'
 
 export class InputMonitor extends EventEmitter {
-  private lastMouseX: number = 0
-  private lastMouseY: number = 0
   private isRunning: boolean = false
+  private lastMouseMoveEmit = 0
+  // mousemove 原生事件频率极高（可达数百 Hz），按 30ms 节流后再向上抛，
+  // 距离统计仍基于相邻采样点连线，误差可忽略
+  private static readonly MOUSE_MOVE_THROTTLE_MS = 30
 
   private activeModifiers: Set<number> = new Set()
   private modifierUsed: Set<number> = new Set() // 标记修饰键是否参与了组合
@@ -100,8 +102,11 @@ export class InputMonitor extends EventEmitter {
       this.emit('mousedown', e.button)
     })
 
-    // 鼠标移动事件
+    // 鼠标移动事件（节流）
     uIOhook.on('mousemove', (e) => {
+      const now = Date.now()
+      if (now - this.lastMouseMoveEmit < InputMonitor.MOUSE_MOVE_THROTTLE_MS) return
+      this.lastMouseMoveEmit = now
       this.emit('mousemove', e.x, e.y)
     })
 

@@ -72,6 +72,9 @@
     <!-- Top Keys Section -->
     <TopKeys :todayKeys="todayTopKeys" :totalKeys="totalTopKeys" />
 
+    <!-- Keyboard Heatmap Section -->
+    <KeyboardHeatmap :todayMap="todayKeyMap" :totalMap="totalKeyMap" />
+
     <!-- History Chart Section -->
     <HistoryChart :data="history" />
 
@@ -120,6 +123,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import HistoryChart from './components/HistoryChart.vue'
 import TopKeys from './components/TopKeys.vue'
+import KeyboardHeatmap from './components/KeyboardHeatmap.vue'
 
 interface TodayStats {
   keyStrokes: number
@@ -153,6 +157,8 @@ const stats = reactive<TodayStats>({
 const history = ref<DayStats[]>([])
 const todayTopKeys = ref<KeyStat[]>([])
 const totalTopKeys = ref<KeyStat[]>([])
+const todayKeyMap = ref<Record<string, number>>({})
+const totalKeyMap = ref<Record<string, number>>({})
 const autostart = ref(false)
 const showResetModal = ref(false)
 
@@ -215,6 +221,14 @@ const loadStats = async () => {
 
     if (data.totalKeyStats) {
       totalTopKeys.value = data.totalKeyStats.slice(0, 15)
+    }
+
+    if (data.keyStatsMap) {
+      todayKeyMap.value = data.keyStatsMap
+    }
+
+    if (data.totalKeyStatsMap) {
+      totalKeyMap.value = data.totalKeyStatsMap
     }
   } catch (err) {
     console.error('Failed to load stats:', err)
@@ -284,6 +298,14 @@ const handleStatsUpdate = (data: any) => {
 
   if (data.totalKeyStats) {
     totalTopKeys.value = data.totalKeyStats.slice(0, 15)
+  }
+
+  if (data.keyStatsMap) {
+    todayKeyMap.value = data.keyStatsMap
+  }
+
+  if (data.totalKeyStatsMap) {
+    totalKeyMap.value = data.totalKeyStatsMap
   }
 }
 

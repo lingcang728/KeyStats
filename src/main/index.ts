@@ -90,59 +90,57 @@ function getDevProjectPaths(): { electronExe: string; projectRoot: string } | nu
 }
 
 /**
+ * 统一解析当前运行形态对应的自启注册参数（消除 get/set/reconcile 三处重复分支）。
+ * - dev：未打包，electron.exe + 项目路径
+ * - dev-project：portable exe 位于开发目录 release/ 下，注册 electron.exe + 项目根目录（build 后自启即最新版）
+ * - production：正式安装版 / 独立 portable，注册 exe 本体
+ */
+type LoginItemMode = 'dev' | 'dev-project' | 'production'
+
+function resolveLoginItemConfig(): { mode: LoginItemMode; options: Electron.LoginItemSettingsOptions } {
+  if (!app.isPackaged) {
+    return {
+      mode: 'dev',
+      options: {
+        name: AUTO_LAUNCH_NAME,
+        path: process.execPath,
+        args: [app.getAppPath()]
+      } as Electron.LoginItemSettingsOptions
+    }
+  }
+
+  const devPaths = getDevProjectPaths()
+  if (devPaths) {
+    return {
+      mode: 'dev-project',
+      options: {
+        name: AUTO_LAUNCH_NAME,
+        path: devPaths.electronExe,
+        args: [devPaths.projectRoot]
+      } as Electron.LoginItemSettingsOptions
+    }
+  }
+
+  return {
+    mode: 'production',
+    options: {
+      name: AUTO_LAUNCH_NAME,
+      path: getAppExePath()
+    } as Electron.LoginItemSettingsOptions
+  }
+}
+
+/**
  * 获取开机自启状态
  */
 function getAutoLaunchEnabled(): boolean {
   try {
-    const exePath = getAppExePath()
-    const globalSettings = app.getLoginItemSettings()
-    
-    if (!app.isPackaged) {
-      // 开发模式
-      const settings = app.getLoginItemSettings({
-        name: AUTO_LAUNCH_NAME,
-        path: process.execPath,
-        args: [app.getAppPath()]
-      } as Electron.LoginItemSettingsOptions)
-      const enabled = settings.openAtLogin || globalSettings.openAtLogin
-      console.log('[AutoLaunch] Dev mode, status:', enabled)
-      return enabled
-    }
-    
-    // 生产模式 - 优先检测是否在开发项目目录中运行
-    const devPaths = getDevProjectPaths()
-    if (devPaths) {
-      const settings = app.getLoginItemSettings({
-        path: devPaths.electronExe,
-        args: [devPaths.projectRoot],
-        name: AUTO_LAUNCH_NAME
-      } as Electron.LoginItemSettingsOptions)
-      const enabled = settings.openAtLogin || globalSettings.openAtLogin
-      console.log('[AutoLaunch] Dev project mode, status:', {
-        exact: settings.openAtLogin,
-        global: globalSettings.openAtLogin,
-        enabled
-      })
-      return enabled
-    }
-
-    // 正常生产模式 - 需要使用相同的 name 参数才能正确读取状态
-    const options: Record<string, unknown> = {
-      path: exePath,
-      name: AUTO_LAUNCH_NAME
-    }
-    const settings = app.getLoginItemSettings(options as Electron.LoginItemSettingsOptions)
-
-    console.log('[AutoLaunch] Get status:', {
-      openAtLogin: settings.openAtLogin || globalSettings.openAtLogin,
-      exactOpenAtLogin: settings.openAtLogin,
-      globalOpenAtLogin: globalSettings.openAtLogin,
-      path: exePath,
-      name: AUTO_LAUNCH_NAME,
-      executableWillLaunchAtLogin: settings.executableWillLaunchAtLogin
-    })
-
-    return settings.openAtLogin || globalSettings.openAtLogin
+    const { mode, options } = resolveLoginItemConfig()
+    const exact = app.getLoginItemSettings(options).openAtLogin
+    const global = app.getLoginItemSettings().openAtLogin
+    const enabled = exact || global
+    console.log('[AutoLaunch] Get status:', { mode, exact, global, enabled, path: options.path })
+    return enabled
   } catch (error) {
     console.error('[AutoLaunch] Failed to get status:', error)
     return false
@@ -152,39 +150,18 @@ function getAutoLaunchEnabled(): boolean {
 /**
  * 清理旧版/开发模式遗留的默认 Electron 自启动项（electron.app.Electron）
  * 早期未传 name 时，Windows Run 中会留下默认名称，升级后可能与新的 KeyStats 项并存。
+ * 该问题只出现在以 electron.exe 启动的形态（dev / dev-project）。
  */
 function clearLegacyElectronAutoLaunchEntry(): void {
   try {
-    const legacyDevArgs = app.isPackaged
-      ? (() => {
-          const devPaths = getDevProjectPaths()
-          if (!devPaths) return null
-          return {
-            path: devPaths.electronExe,
-            args: [devPaths.projectRoot]
-          }
-        })()
-      : {
-          path: process.execPath,
-          args: [app.getAppPath()]
-        }
+    const { mode, options } = resolveLoginItemConfig()
+    if (mode === 'production') return
 
-    if (!legacyDevArgs) {
-      return
-    }
+    const legacyArgs = { path: options.path as string, args: options.args as string[] }
+    if (!app.getLoginItemSettings(legacyArgs).openAtLogin) return
 
-    const legacySettings = app.getLoginItemSettings(legacyDevArgs)
-    if (!legacySettings.openAtLogin) {
-      return
-    }
-
-    app.setLoginItemSettings({
-      openAtLogin: false,
-      path: legacyDevArgs.path,
-      args: legacyDevArgs.args
-    })
-
-    console.log('[AutoLaunch] Cleared legacy Electron startup entry:', legacyDevArgs)
+    app.setLoginItemSettings({ openAtLogin: false, ...legacyArgs })
+    console.log('[AutoLaunch] Cleared legacy Electron startup entry:', legacyArgs)
   } catch (error) {
     console.error('[AutoLaunch] Failed to clear legacy Electron startup entry:', error)
   }
@@ -200,38 +177,10 @@ function reconcileAutoLaunchRegistration(): void {
   try {
     clearLegacyElectronAutoLaunchEntry()
 
-    const globalSettings = app.getLoginItemSettings()
-    if (!globalSettings.openAtLogin) {
-      return
-    }
+    if (!app.getLoginItemSettings().openAtLogin) return
 
-    const exactEnabled = (() => {
-      if (!app.isPackaged) {
-        return app.getLoginItemSettings({
-          name: AUTO_LAUNCH_NAME,
-          path: process.execPath,
-          args: [app.getAppPath()]
-        } as Electron.LoginItemSettingsOptions).openAtLogin
-      }
-
-      const devPaths = getDevProjectPaths()
-      if (devPaths) {
-        return app.getLoginItemSettings({
-          path: devPaths.electronExe,
-          args: [devPaths.projectRoot],
-          name: AUTO_LAUNCH_NAME
-        } as Electron.LoginItemSettingsOptions).openAtLogin
-      }
-
-      return app.getLoginItemSettings({
-        path: getAppExePath(),
-        name: AUTO_LAUNCH_NAME
-      } as Electron.LoginItemSettingsOptions).openAtLogin
-    })()
-
-    if (exactEnabled) {
-      return
-    }
+    const { options } = resolveLoginItemConfig()
+    if (app.getLoginItemSettings(options).openAtLogin) return
 
     console.log('[AutoLaunch] Detected stale startup registration, rewriting to current version...')
     setAutoLaunchEnabled(true)
@@ -245,65 +194,16 @@ function reconcileAutoLaunchRegistration(): void {
  */
 function setAutoLaunchEnabled(enabled: boolean): boolean {
   try {
-    const exePath = getAppExePath()
+    const { mode, options } = resolveLoginItemConfig()
     clearLegacyElectronAutoLaunchEntry()
-    
-    if (!app.isPackaged) {
-      // 开发模式
-      app.setLoginItemSettings({
-        openAtLogin: enabled,
-        name: AUTO_LAUNCH_NAME,
-        path: process.execPath,
-        args: [app.getAppPath()]
-      } as Electron.Settings)
-      console.log('[AutoLaunch] Dev mode, set to:', enabled)
-      return enabled
-    }
-    
-    // 生产模式 - 优先检测是否在开发项目目录中运行
-    const devPaths = getDevProjectPaths()
-    if (devPaths) {
-      // 使用 electron.exe + 项目路径注册，build 后即为最新版
-      app.setLoginItemSettings({
-        openAtLogin: enabled,
-        name: AUTO_LAUNCH_NAME,
-        path: devPaths.electronExe,
-        args: [devPaths.projectRoot]
-      } as Electron.Settings)
-      console.log('[AutoLaunch] Dev project mode, set to:', {
-        enabled,
-        electronExe: devPaths.electronExe,
-        projectRoot: devPaths.projectRoot
-      })
 
-      const verify = getAutoLaunchEnabled()
-      if (verify !== enabled) {
-        console.warn('[AutoLaunch] Verification failed! Expected:', enabled, 'Got:', verify)
-      }
-      return enabled
-    }
+    app.setLoginItemSettings({ openAtLogin: enabled, ...options } as Electron.Settings)
+    console.log('[AutoLaunch] Set to:', { mode, enabled, path: options.path })
 
-    // 正常生产模式 - 完整配置确保 Win10/11 兼容
-    const settings: Record<string, unknown> = {
-      openAtLogin: enabled,
-      name: AUTO_LAUNCH_NAME,
-      path: exePath
-    }
-
-    app.setLoginItemSettings(settings as Electron.Settings)
-
-    console.log('[AutoLaunch] Set to:', {
-      enabled,
-      path: exePath,
-      name: AUTO_LAUNCH_NAME
-    })
-    
-    // 验证设置是否成功
     const verify = getAutoLaunchEnabled()
     if (verify !== enabled) {
       console.warn('[AutoLaunch] Verification failed! Expected:', enabled, 'Got:', verify)
     }
-    
     return enabled
   } catch (error) {
     console.error('[AutoLaunch] Failed to set:', error)
@@ -443,13 +343,24 @@ function updateTrayIcon(): void {
 }
 
 function sendStatsToRenderer(): void {
-  if (mainWindow && statsManager) {
-    const todayStats = statsManager.getTodayStats()
-    const historyData = statsManager.getHistoryData(30)
-    const keyStats = statsManager.getKeyStats()
-    const totalKeyStats = statsManager.getTotalKeyStats()
-    mainWindow.webContents.send('stats-update', { todayStats, historyData, keyStats, totalKeyStats })
-  }
+  // 窗口隐藏时跳过：避免后台无谓的序列化与 IPC 推送
+  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return
+  if (!statsManager) return
+
+  const todayStats = statsManager.getTodayStats()
+  const historyData = statsManager.getHistoryData(30)
+  const keyStats = statsManager.getKeyStats()
+  const totalKeyStats = statsManager.getTotalKeyStats()
+  const keyStatsMap = statsManager.getKeyStatsMap()
+  const totalKeyStatsMap = statsManager.getTotalKeyStatsMap()
+  mainWindow.webContents.send('stats-update', {
+    todayStats,
+    historyData,
+    keyStats,
+    totalKeyStats,
+    keyStatsMap,
+    totalKeyStatsMap
+  })
 }
 
 // IPC 通信
@@ -460,7 +371,9 @@ function setupIPC(): void {
       todayStats: statsManager.getTodayStats(),
       historyData: statsManager.getHistoryData(30),
       keyStats: statsManager.getKeyStats(),
-      totalKeyStats: statsManager.getTotalKeyStats()
+      totalKeyStats: statsManager.getTotalKeyStats(),
+      keyStatsMap: statsManager.getKeyStatsMap(),
+      totalKeyStatsMap: statsManager.getTotalKeyStatsMap()
     }
   })
 
@@ -478,6 +391,8 @@ function setupIPC(): void {
 
   ipcMain.handle('quit-app', () => {
     console.log('[Main] quit-app received, stopping monitor and quitting...')
+    // 退出前把节流中的统计立即落盘
+    statsManager?.flush()
     // 先停止输入监听器，否则 uiohook 会阻止进程退出
     if (inputMonitor) {
       inputMonitor.stop()
@@ -504,41 +419,23 @@ function startInputMonitor(): void {
   statsManager = new StatsManager()
   inputMonitor = new InputMonitor()
 
-  inputMonitor.on('keydown', (keycode: number) => {
-    statsManager?.recordKeyPress(keycode)
-    updateTrayIcon()
-    sendStatsToRenderer()
-  })
-
-  inputMonitor.on('combo', (comboName: string) => {
-    statsManager?.recordKeyPress(comboName)
-    updateTrayIcon()
-    sendStatsToRenderer()
-  })
-
+  // 事件回调只做计数。UI/托盘刷新统一由下方每秒定时器驱动，
+  // 避免每次按键都触发全量序列化 + IPC 推送 + 托盘 tooltip 重设。
+  inputMonitor.on('keydown', (keycode: number) => statsManager?.recordKeyPress(keycode))
+  inputMonitor.on('combo', (comboName: string) => statsManager?.recordKeyPress(comboName))
   inputMonitor.on('mousedown', (button: number) => {
     if (button === 1) {
       statsManager?.recordLeftClick()
     } else if (button === 2) {
       statsManager?.recordRightClick()
     }
-    updateTrayIcon()
-    sendStatsToRenderer()
   })
-
-  inputMonitor.on('mousemove', (x: number, y: number) => {
-    statsManager?.recordMouseMove(x, y)
-    // 鼠标移动更新频率降低
-  })
-
-  inputMonitor.on('wheel', (delta: number) => {
-    statsManager?.recordScroll(delta)
-    sendStatsToRenderer()
-  })
+  inputMonitor.on('mousemove', (x: number, y: number) => statsManager?.recordMouseMove(x, y))
+  inputMonitor.on('wheel', (delta: number) => statsManager?.recordScroll(delta))
 
   inputMonitor.start()
 
-  // 每秒更新一次托盘图标和渲染进程
+  // 每秒更新一次托盘图标和渲染进程（窗口可见时）
   setInterval(() => {
     updateTrayIcon()
     sendStatsToRenderer()
@@ -580,6 +477,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  statsManager?.flush()
   if (inputMonitor) {
     inputMonitor.stop()
   }

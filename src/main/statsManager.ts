@@ -126,19 +126,19 @@ export class StatsManager {
     // 更新总计统计
     this.totalKeyStats[keyName] = (this.totalKeyStats[keyName] || 0) + 1
 
-    this.saveDebounced()
+    this.scheduleSave()
   }
 
   // 记录左键点击
   recordLeftClick(): void {
     this.today.leftClicks++
-    this.saveDebounced()
+    this.scheduleSave()
   }
 
   // 记录右键点击
   recordRightClick(): void {
     this.today.rightClicks++
-    this.saveDebounced()
+    this.scheduleSave()
   }
 
   // 记录鼠标移动
@@ -159,13 +159,13 @@ export class StatsManager {
     this.hasLastMouse = true
 
     // 鼠标移动保存频率更低
-    this.saveDebounced()
+    this.scheduleSave()
   }
 
   // 记录滚动
   recordScroll(delta: number): void {
     this.today.scrollDistance += Math.abs(delta)
-    this.saveDebounced()
+    this.scheduleSave()
   }
 
   // 获取今日统计
@@ -208,6 +208,16 @@ export class StatsManager {
       .slice(0, 15)
   }
 
+  // 获取今日完整按键计数表（热力图用）
+  getKeyStatsMap(): KeyStats {
+    return { ...this.keyStats }
+  }
+
+  // 获取总计完整按键计数表（热力图用）
+  getTotalKeyStatsMap(): KeyStats {
+    return { ...this.totalKeyStats }
+  }
+
   // 重置今日数据
   resetToday(): void {
     this.today = {
@@ -219,20 +229,33 @@ export class StatsManager {
     this.save()
   }
 
-  // 防抖保存
+  // 节流保存：持续输入时也保证至少每 SAVE_INTERVAL_MS 落盘一次。
+  // （旧实现是防抖：连续打字/移动鼠标会不断重置定时器，崩溃时可能丢很久的数据）
   private saveTimer: NodeJS.Timeout | null = null
+  private lastSaveAt = 0
+  private static readonly SAVE_INTERVAL_MS = 5000
 
-  private saveDebounced(): void {
+  private scheduleSave(): void {
+    if (this.saveTimer) return
+    const delay = Math.max(0, StatsManager.SAVE_INTERVAL_MS - (Date.now() - this.lastSaveAt))
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null
+      this.save()
+    }, delay)
+  }
+
+  // 立即落盘（退出前调用）
+  flush(): void {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer)
+      this.saveTimer = null
     }
-    this.saveTimer = setTimeout(() => {
-      this.save()
-    }, 1000)
+    this.save()
   }
 
   // 保存数据
   private save(): void {
+    this.lastSaveAt = Date.now()
     this.store.set('today', this.today)
     this.store.set('keyStats', this.keyStats)
     this.store.set('totalKeyStats', this.totalKeyStats)
