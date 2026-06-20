@@ -145,3 +145,9 @@ out
 # Local data
 keystats-data.json
 config.json
+
+# Claude Code local settings (personal, do not commit)
+.claude/settings.local.json
+
+# Accidental screenshots
+image.png
