@@ -12,9 +12,7 @@ function setupAutoUpdater(): void {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
-  autoUpdater.on('checking-for-update', () => {
-    // console.log('Checking for update...')
-  })
+  autoUpdater.on('checking-for-update', () => {})
 
   autoUpdater.on('update-available', (info) => {
     // 可以在这里通知渲染进程有更新可用
@@ -25,13 +23,9 @@ function setupAutoUpdater(): void {
     // })
   })
 
-  autoUpdater.on('update-not-available', (info) => {
-    // console.log('Update not available.')
-  })
+  autoUpdater.on('update-not-available', () => {})
 
-  autoUpdater.on('error', (err) => {
-    // dialog.showErrorBox('更新错误', err.message)
-  })
+  autoUpdater.on('error', () => {})
 
   autoUpdater.on('update-downloaded', (info) => {
     // 下载完成后，询问用户是否重启更新
@@ -136,10 +130,24 @@ function resolveLoginItemConfig(): { mode: LoginItemMode; options: Electron.Logi
 function getAutoLaunchEnabled(): boolean {
   try {
     const { mode, options } = resolveLoginItemConfig()
-    const exact = app.getLoginItemSettings(options).openAtLogin
-    const global = app.getLoginItemSettings().openAtLogin
-    const enabled = exact || global
-    console.log('[AutoLaunch] Get status:', { mode, exact, global, enabled, path: options.path })
+    const settings = app.getLoginItemSettings(options)
+    // ⚠️ Windows + Electron 29 下 settings.openAtLogin 回读恒为 false（不可靠，实测验证）。
+    // Windows 上 launchItems 才是权威：按“名为 KeyStats 且已启用”的启动项判断；
+    // 仅当拿不到 launchItems（其它平台/版本）时，才回退到 executableWillLaunchAtLogin / openAtLogin。
+    const launchItems = settings.launchItems
+    const byName = Array.isArray(launchItems)
+      ? launchItems.some((it) => it.name === AUTO_LAUNCH_NAME && it.enabled)
+      : undefined
+    const enabled =
+      byName ?? (settings.executableWillLaunchAtLogin === true || settings.openAtLogin)
+    console.log('[AutoLaunch] Get status:', {
+      mode,
+      byName,
+      exec: settings.executableWillLaunchAtLogin,
+      openAtLogin: settings.openAtLogin,
+      enabled,
+      path: options.path
+    })
     return enabled
   } catch (error) {
     console.error('[AutoLaunch] Failed to get status:', error)
@@ -177,10 +185,15 @@ function reconcileAutoLaunchRegistration(): void {
   try {
     clearLegacyElectronAutoLaunchEntry()
 
-    if (!app.getLoginItemSettings().openAtLogin) return
+    // 没有开启自启就无需处理（openAtLogin 不可靠，统一走 getAutoLaunchEnabled）
+    if (!getAutoLaunchEnabled()) return
 
     const { options } = resolveLoginItemConfig()
-    if (app.getLoginItemSettings(options).openAtLogin) return
+    const items = app.getLoginItemSettings(options).launchItems || []
+    const pointsToCurrent = items.some(
+      (it) => it.name === AUTO_LAUNCH_NAME && it.enabled && it.path === options.path
+    )
+    if (pointsToCurrent) return
 
     console.log('[AutoLaunch] Detected stale startup registration, rewriting to current version...')
     setAutoLaunchEnabled(true)
@@ -263,6 +276,17 @@ function createTray(): void {
   tray = new Tray(icon)
   tray.setToolTip('KeyStats - 键鼠统计')
 
+  refreshTrayMenu()
+  tray.on('click', () => showWindow())
+}
+
+/**
+ * 每次都用最新的自启状态重建托盘菜单，保证复选框与系统真实状态一致。
+ * 与渲染进程开关共享单一数据源 getAutoLaunchEnabled()。
+ */
+function refreshTrayMenu(): void {
+  if (!tray) return
+
   const contextMenu = Menu.buildFromTemplate([
     { label: '显示面板', click: () => showWindow() },
     { type: 'separator' },
@@ -273,7 +297,7 @@ function createTray(): void {
       type: 'checkbox',
       checked: getAutoLaunchEnabled(),
       click: (item) => {
-        setAutoLaunchEnabled(item.checked)
+        applyAutoLaunch(item.checked)
       }
     },
     { type: 'separator' },
@@ -281,7 +305,26 @@ function createTray(): void {
   ])
 
   tray.setContextMenu(contextMenu)
-  tray.on('click', () => showWindow())
+}
+
+/**
+ * 设置开机自启的统一入口：写登录项 → 刷新托盘菜单 → 通知渲染进程。
+ * 无论从托盘还是面板触发，两侧 UI 都会同步到真实状态。
+ */
+function applyAutoLaunch(enabled: boolean): boolean {
+  setAutoLaunchEnabled(enabled)
+  const actual = getAutoLaunchEnabled()
+  refreshTrayMenu()
+  notifyAutostartChanged(actual)
+  return actual
+}
+
+/**
+ * 把当前自启状态推送给渲染进程（窗口可见时），用于双向同步与显示窗口时的刷新。
+ */
+function notifyAutostartChanged(enabled: boolean = getAutoLaunchEnabled()): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send('autostart-changed', enabled)
 }
 
 function showWindow(): void {
@@ -321,6 +364,9 @@ function showWindow(): void {
     mainWindow.setPosition(x, y)
     mainWindow.show()
     mainWindow.focus()
+
+    // 窗口长期不重建，显示时主动同步一次自启状态，避免面板开关显示陈旧
+    notifyAutostartChanged()
   }
 }
 
@@ -351,15 +397,11 @@ function sendStatsToRenderer(): void {
   const historyData = statsManager.getHistoryData(30)
   const keyStats = statsManager.getKeyStats()
   const totalKeyStats = statsManager.getTotalKeyStats()
-  const keyStatsMap = statsManager.getKeyStatsMap()
-  const totalKeyStatsMap = statsManager.getTotalKeyStatsMap()
   mainWindow.webContents.send('stats-update', {
     todayStats,
     historyData,
     keyStats,
-    totalKeyStats,
-    keyStatsMap,
-    totalKeyStatsMap
+    totalKeyStats
   })
 }
 
@@ -371,9 +413,7 @@ function setupIPC(): void {
       todayStats: statsManager.getTodayStats(),
       historyData: statsManager.getHistoryData(30),
       keyStats: statsManager.getKeyStats(),
-      totalKeyStats: statsManager.getTotalKeyStats(),
-      keyStatsMap: statsManager.getKeyStatsMap(),
-      totalKeyStatsMap: statsManager.getTotalKeyStatsMap()
+      totalKeyStats: statsManager.getTotalKeyStats()
     }
   })
 
@@ -410,7 +450,7 @@ function setupIPC(): void {
   })
 
   ipcMain.handle('set-autostart', (_, enabled: boolean) => {
-    return setAutoLaunchEnabled(enabled)
+    return applyAutoLaunch(enabled)
   })
 }
 

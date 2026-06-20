@@ -20,6 +20,16 @@ export default defineConfig({
       alias: {
         '@': resolve(__dirname, 'src/renderer/src')
       }
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vue: ['vue'],
+            echarts: ['echarts']
+          }
+        }
+      }
     }
   }
 })

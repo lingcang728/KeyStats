@@ -208,16 +208,6 @@ export class StatsManager {
       .slice(0, 15)
   }
 
-  // 获取今日完整按键计数表（热力图用）
-  getKeyStatsMap(): KeyStats {
-    return { ...this.keyStats }
-  }
-
-  // 获取总计完整按键计数表（热力图用）
-  getTotalKeyStatsMap(): KeyStats {
-    return { ...this.totalKeyStats }
-  }
-
   // 重置今日数据
   resetToday(): void {
     this.today = {

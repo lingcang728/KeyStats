@@ -72,9 +72,6 @@
     <!-- Top Keys Section -->
     <TopKeys :todayKeys="todayTopKeys" :totalKeys="totalTopKeys" />
 
-    <!-- Keyboard Heatmap Section -->
-    <KeyboardHeatmap :todayMap="todayKeyMap" :totalMap="totalKeyMap" />
-
     <!-- History Chart Section -->
     <HistoryChart :data="history" />
 
@@ -120,10 +117,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import HistoryChart from './components/HistoryChart.vue'
+import { defineAsyncComponent, ref, reactive, onMounted, onUnmounted } from 'vue'
 import TopKeys from './components/TopKeys.vue'
-import KeyboardHeatmap from './components/KeyboardHeatmap.vue'
+
+const HistoryChart = defineAsyncComponent(() => import('./components/HistoryChart.vue'))
 
 interface TodayStats {
   keyStrokes: number
@@ -157,8 +154,6 @@ const stats = reactive<TodayStats>({
 const history = ref<DayStats[]>([])
 const todayTopKeys = ref<KeyStat[]>([])
 const totalTopKeys = ref<KeyStat[]>([])
-const todayKeyMap = ref<Record<string, number>>({})
-const totalKeyMap = ref<Record<string, number>>({})
 const autostart = ref(false)
 const showResetModal = ref(false)
 
@@ -222,14 +217,6 @@ const loadStats = async () => {
     if (data.totalKeyStats) {
       totalTopKeys.value = data.totalKeyStats.slice(0, 15)
     }
-
-    if (data.keyStatsMap) {
-      todayKeyMap.value = data.keyStatsMap
-    }
-
-    if (data.totalKeyStatsMap) {
-      totalKeyMap.value = data.totalKeyStatsMap
-    }
   } catch (err) {
     console.error('Failed to load stats:', err)
   }
@@ -245,9 +232,13 @@ const loadAutostart = async () => {
 
 const toggleAutostart = async () => {
   try {
-    await window.api.setAutostart(autostart.value)
+    // 以主进程返回的真实状态回写，避免设置失败仍显示已开（受控开关）
+    const actual = await window.api.setAutostart(autostart.value)
+    autostart.value = actual
   } catch (err) {
     console.error('Failed to set autostart:', err)
+    // 设置失败时回滚到真实状态
+    await loadAutostart()
   }
 }
 
@@ -299,24 +290,21 @@ const handleStatsUpdate = (data: any) => {
   if (data.totalKeyStats) {
     totalTopKeys.value = data.totalKeyStats.slice(0, 15)
   }
-
-  if (data.keyStatsMap) {
-    todayKeyMap.value = data.keyStatsMap
-  }
-
-  if (data.totalKeyStatsMap) {
-    totalKeyMap.value = data.totalKeyStatsMap
-  }
 }
 
 onMounted(() => {
   loadStats()
   loadAutostart()
   window.api.onStatsUpdate(handleStatsUpdate)
+  // 托盘/系统侧改动或窗口重新显示时，主进程会推送最新状态，保持开关同步
+  window.api.onAutostartChanged((enabled) => {
+    autostart.value = enabled
+  })
 })
 
 onUnmounted(() => {
   window.api.removeStatsListener()
+  window.api.removeAutostartListener()
 })
 </script>
 

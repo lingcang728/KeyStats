@@ -50,7 +50,13 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { BarChart, LineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import { UniversalTransition } from 'echarts/features'
+import { CanvasRenderer } from 'echarts/renderers'
+
+echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, UniversalTransition, CanvasRenderer])
 
 interface DayStats {
   date: string
@@ -121,7 +127,7 @@ const updateChart = () => {
     values = values.map(v => Math.round(v / 3779.527559 * 10) / 10)
   }
   
-  const option: echarts.EChartsOption = {
+  const option: echarts.EChartsCoreOption = {
     backgroundColor: 'transparent',
     grid: {
       top: 10,

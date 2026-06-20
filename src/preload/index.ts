@@ -13,7 +13,6 @@ const api = {
   
   // 退出应用
   quitApp: () => {
-    console.log('[Preload] quitApp called')
     return ipcRenderer.invoke('quit-app')
   },
   
@@ -22,15 +21,25 @@ const api = {
   
   // 设置开机启动
   setAutostart: (enabled: boolean) => ipcRenderer.invoke('set-autostart', enabled),
-  
+
   // 监听统计更新
   onStatsUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('stats-update', (_, data) => callback(data))
   },
-  
+
   // 移除监听
   removeStatsListener: () => {
     ipcRenderer.removeAllListeners('stats-update')
+  },
+
+  // 监听开机启动状态变化（托盘/系统侧改动 → 同步面板开关）
+  onAutostartChanged: (callback: (enabled: boolean) => void) => {
+    ipcRenderer.on('autostart-changed', (_, enabled) => callback(enabled))
+  },
+
+  // 移除开机启动监听
+  removeAutostartListener: () => {
+    ipcRenderer.removeAllListeners('autostart-changed')
   }
 }
 
